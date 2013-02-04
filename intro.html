@@ -1,0 +1,25 @@
+<html>
+    <head>
+        <script type="text/javascript" src="js/vendor/esprima/esprima.js"></script>
+        <script type="text/javascript" src="js/vendor/escodegen/escodegen.browser.js"></script>
+        <script type="text/javascript" src="js/vendor/underscore/underscore.js"></script>
+        <script type="text/javascript" src="js/intro.js"></script>
+        <script type="text/javascript" src="js/vendor/viz.js/viz.js"></script>
+        <script type="text/javascript">var parser = esprima;</script>
+    </head>
+    <body>
+        <textarea rows=20 cols=80 id="in">
+x = 0
+
+if (x == 0) {
+x = -1;
+}
+
+while (x < 5) {
+x = x + 1;
+} 
+        </textarea>
+        <input type="button" onclick="main(document.getElementById('in').value)" value="run"/>
+        <div id="canvas">
+    </body>
+</html>
