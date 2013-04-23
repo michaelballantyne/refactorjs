@@ -3,23 +3,65 @@
         <script type="text/javascript" src="js/vendor/esprima/esprima.js"></script>
         <script type="text/javascript" src="js/vendor/escodegen/escodegen.browser.js"></script>
         <script type="text/javascript" src="js/vendor/underscore/underscore.js"></script>
-        <script type="text/javascript" src="js/intro.js"></script>
         <script type="text/javascript" src="js/vendor/viz.js/viz.js"></script>
         <script type="text/javascript">var parser = esprima;</script>
+        <script type="text/javascript" src="js/vendor/jquery/jquery.js"></script>
+        <script type="text/javascript" src="js/vendor/jquery/minified/jquery-ui.min.js"></script>
+        <script type="text/javascript" src="js/vendor/codemirror/lib/codemirror.js"></script>
+        <script type="text/javascript" src="js/vendor/codemirror/mode/javascript/javascript.js"></script>
+
+        <script type="text/javascript" src="js/intro.js"></script>
+        <script type="text/javascript" src="js/refactor.js"></script>
+
+        <link href="js/vendor/codemirror/lib/codemirror.css" rel="stylesheet" type="text/css"/>
+        <link href="js/vendor/jquery/themes/base/jquery-ui.css" rel="stylesheet" type="text/css"/>
+
+        <style>
+.CodeMirror {
+  border: 1px solid #eee;
+  height: 70%;
+}
+            
+            body {
+                font-size: 200%;
+            }
+            .marked {
+                background-color: #EBAEC6;
+            }
+
+            #status {
+                border: 1px solid black;
+                border-radius: 4px;
+                padding: 3px;
+                display: inline-block;
+            }
+        </style>
     </head>
     <body>
-        <textarea rows=20 cols=80 id="in">
-x = 0
+        <textarea id="initial" style="display: none">
+universalConstants = {c: 299792458};
 
-if (x == 0) {
-x = -1;
+showShape = "orange";
+
+redSphere = {center: {x: 2, y: 3, z: 0}, radius: 5, c: "red"}
+orangeSphere = {center: {x: 5, y: 1, z: 0}, radius: 5, c: "orange"}
+
+shape = redSphere;
+
+if (showShape == "orange") {
+  shape = orangeSphere;
 }
 
-while (x < 5) {
-x = x + 1;
-} 
-        </textarea>
-        <input type="button" onclick="main(document.getElementById('in').value)" value="run"/>
+color = shape["c"];
+                </textarea>
+        <h3>Code</h3>
+        <div id="in">
+        </div>
+        <div id="status">
+            Highlight a field name and type CTRL-r to refactor.
+        </div>
+        <h3>State Diagram</h3>
         <div id="canvas">
+        </div>
     </body>
 </html>

@@ -1,101 +1,173 @@
-var State = function(statements, environment) {
+var interpreter = {};
+
+var State = function(statements, environment, store, ostore) {
     this.statements = statements;
     this.environment = environment;
-}
+    this.store = store;
+    this.ostore = ostore;
+};
 
 var deepCopy = function(object) {
     return JSON.parse(JSON.stringify(object));
+};
+
+var absInt = function(number) {
+    return {type: "integer"}; 
+};
+
+var absString = function(string) {
+    return {type: "string", value: string};
 }
 
-var abstractInt = function(number) {
-    if (number < 0) {
-        return ['-'];
-    } else if (number === 0) {
-        return [0];
-    } else if (number > 0) {
-        return ['+'];
+var olocToParse = {};
+
+var allocToAccess = {};
+var accessToAlloc = {};
+
+var posString = function(pos) {
+    return pos.line + ":" + pos.column;
+}
+
+var locString = function(range) {
+    return posString(range.start) + "-" + posString(range.end);
+};
+
+var fieldRange = function(expression, field) {
+    var properties = expression.properties;
+    var i;
+    for (i = 0; i < properties.length; i++) {
+        if (properties[i].key.name === field) {
+            return locString(properties[i].key.loc);
+        }
+    }
+    return null;
+};
+
+var absObject = function(expression, state) {
+    var properties = expression.properties
+    var object = {};
+    var i;
+    var property;
+
+    var oloc = posString(expression.loc.start);
+
+    olocToParse[oloc] = expression;
+
+    for (i = 0; i < properties.length; i++) {
+        property = properties[i];
+        object[property.key.name] = interpreter.absEvalExpression(property.value, state);
     }
 
-    throw "Number should be positive, negative, or zero."
-}
+    state.ostore[oloc] = object;
 
-var signPlus = function(left, right) {
-    if (right === 0) {
-        return [left];
-    } else if (left === 0) {
-        return [right];
-    } else if (left === '-' && right === '-') {
-        return ['-'];
-    } else if (left === '+' && right === '+') {
-        return ['+'];
-    } else if ((left === '+' && right === '-')
-            || (left === '-' && right === '+')) {
-        return ['-', 0, '+'];
-    } else {
-        throw "Missed a sign combo, I guess";
-    }
-}
-
-var signMinus = function(left, right) {
-    if (left === '+' && right === '+') {
-        return ['-', 0, '+'];
-    } else if (left === '+' && right === 0) {
-        return ['+'];
-    } else if (left === '+' && right === '-') {
-        return ['+'];
-    } else if (left === 0 && right === '+') {
-        return ['-'];
-    } else if (left === 0 && right === 0) {
-        return [0];
-    } else if (left === 0 && right === '-') {
-        return ['+'];
-    } else if (left === '-' && right === '+') {
-        return ['-'];
-    } else if (left === '-' && right === 0) {
-        return ['-'];
-    } else if (left === '-' && right === '-') {
-        return ['-', 0, '+'];
-    }
-}
-
-var abstractOperation = function(left, right, signOperation) {
-    var result = [];
-    _.each(left, function(lsign) {
-        _.each(right, function(rsign) {
-           result = _.union(result, signOperation(lsign, rsign));
-        });
-    });
+    var result = {type: "oloc", value: oloc};
     return result;
-}
+};
 
-var absEvalExpression = function(expression, env) {
+
+var objAccess = function(expression, state) {
+    var object = interpreter.absEvalExpression(expression.object, state);
+    var property = interpreter.absEvalExpression(expression.property, state);
+
+    if (property.type !== "string") {
+        throw "Error";
+    }
+
+    if (object.type !== "oloc") {
+        throw "Error";
+    }
+
+    var oloc = object.value;
+    var alloc = fieldRange(olocToParse[oloc], property.value);
+    var loc = expression.property.loc;
+    var adjustedLoc = {start: {line: loc.start.line, column: loc.start.column + 1}, end: {line: loc.end.line, column: loc.end.column - 1}};
+    var access = locString(adjustedLoc);
+
+    if (!allocToAccess.hasOwnProperty(alloc)) {
+        allocToAccess[alloc] = [];
+    }
+    allocToAccess[alloc].push(access);
+    
+    if (!accessToAlloc.hasOwnProperty(access)) {
+        accessToAlloc[access] = [];
+    }
+    accessToAlloc[access].push(alloc);
+
+    return state.ostore[object.value][property.value];
+};
+
+interpreter.absEvalExpression = function(expression, state) {
     if (expression.type === "Literal") {
-        return abstractInt(expression.value);
+        if (typeof(expression.value) === "number") {
+            return absInt(expression.value);
+        }
+        else if (typeof(expression.value) === "string") {
+            return absString(expression.value);
+        }
     }
 
     if (expression.type === "BinaryExpression") {
-        var left = absEvalExpression(expression.left, env);
-        var right = absEvalExpression(expression.right, env);
+        var left = interpreter.absEvalExpression(expression.left, state);
+        var right = interpreter.absEvalExpression(expression.right, state);
 
-        var opMap = {'+': signPlus, '-': signMinus};
-
-        if (!_.contains(_.keys(opMap), expression.operator)) {
-            throw "Operation " + expression.operator + " not supported";
+        if (left.type == "integer" && right.type == "integer") {
+            return {type: "integer"};
         }
 
-        return abstractOperation(left, right, opMap[expression.operator]);
+        throw "Unsupported";
     }
 
     if (expression.type === "Identifier") {
-        return env[expression.name];
+        return state.environment[expression.name];
     }
 
     if (expression.type === "UnaryExpression"
         && expression.operator === "-") {
-        return abstractOperation([0], absEvalExpression(expression.argument, env), signMinus);
+        return interpreter.absEvalExpression(expression.argument, state);
+    }
+
+    if (expression.type === "ObjectExpression") {
+        return absObject(expression, state);
+    }
+
+    if (expression.type === "MemberExpression") {
+        return objAccess(expression, state);
     }
 
     throw "Support for this expression not implemented";
+};
+
+var absAssignment = function(statement, state) {
+    var newState = deepCopy(state);
+
+    var identifier = statement.expression.left.name;
+    var expression = statement.expression.right;
+
+    newState.statements = newState.statements.slice(1);
+
+    newState.environment[identifier] = interpreter.absEvalExpression(expression, newState);
+
+    return [newState];
+};
+
+var absIf = function(statement, state) {
+    var newStateIf = deepCopy(state);
+    var newStateElse = deepCopy(state);
+
+    newStateIf.statements = statement.consequent.body.concat(state.statements.slice(1));
+    newStateElse.statements = newStateElse.statements.slice(1);
+
+    return [newStateIf, newStateElse];
+};
+
+var absWhile = function(statement, state) {
+    var newStateBody = deepCopy(state);
+    var newStateElse = deepCopy(state);
+
+    newStateBody.statements = statement.body.body.concat([statement], state.statements.slice(1)) 
+    newStateElse.statements = newStateElse.statements.slice(1);
+
+    return [newStateBody, newStateElse];
 }
 
 var absStep = function(state) {
@@ -103,27 +175,19 @@ var absStep = function(state) {
 
     if (statement.type === "ExpressionStatement" &&
         statement.expression.type === "AssignmentExpression") {
-        var identifier = statement.expression.left.name;
-        var expression = statement.expression.right;
-        var newStatements = state.statements.slice(1);
-
-        var newEnv = Object.create(state.environment);
-        newEnv[identifier] = absEvalExpression(expression, state.environment);
-
-        return [new State(newStatements, newEnv)];
+        return absAssignment(statement, state);
     } else if (statement.type === "IfStatement") {
-        var newStatementsIf = statement.consequent.body.concat(state.statements.slice(1));
-
-        return [new State(newStatementsIf, state.environment),
-                new State(state.statements.slice(1), state.environment)];
-    } else if (statement.type === "WhileStatement") { 
-        var newStatements = statement.body.body.concat([statement], state.statements.slice(1));
-        return [new State(newStatements, state.environment),
-                new State(state.statements.slice(1), state.environment)];
+        return absIf(statement, state);
+    } else if (statement.type === "WhileStatement"
+        || statement.type === "ForStatement") { 
+        return absWhile(statement, state);
+    } else if (statement.type === "VariableDeclaration") {
+        var newState = deepCopy(state);
+        newState.environment[statement.declarations[0].id.name] = {type: "undefined"}    
+        return newState;
     } else {
         throw "Only variable assignments are implemented.";
     }
-
 }
 
 // Linear search.
@@ -138,7 +202,7 @@ var deepIndexOf = function(lst, obj) {
 }
 
 var analyze = function(program) {
-    var nodes = [new State(program.body, {})];
+    var nodes = [new State(program.body, {}, {}, {})];
     var todoIndex = 0;
     var neighborsMap = {};
 
@@ -159,11 +223,21 @@ var analyze = function(program) {
         todoIndex++;
     }
 
-    return {nodes: nodes, neighborsMap: neighborsMap};
+    return {nodes: nodes, neighborsMap: neighborsMap, accessToAlloc: accessToAlloc, allocToAccess: allocToAccess};
+
+}
+
+
+function flatten(obj) {
+    var result = Object.create(obj);
+    for(var key in result) {
+        result[key] = result[key];
+    }
+    return result;
 }
 
 function main(data) {
-    var tree = parser.parse(data)
+    var tree = parser.parse(data, {loc: true})
     console.log(tree);
 
     var analysis = analyze(tree);
@@ -173,13 +247,13 @@ function main(data) {
         var program = {};
         program.type = "Program";
         program.body = node.statements;
-        return {code: escodegen.generate(program), env: node.environment};
+        return {code: escodegen.generate(program), env: flatten(node.environment), ostore: flatten(node.ostore)};
     });
     console.log(JSON.stringify({nodes: stringNodes}, null, 4));
     var vizsrc = "digraph G {\n"
     var i;
     _.each(stringNodes, function(node, element) {
-        vizsrc += '"' + String(element) + '" [\nshape = "box"\nlabel = "program:\\l' + node.code.replace(/\n/g, "\\l") + '\\l\\lenv: ' + JSON.stringify(node.env).replace(/\"/g, "\\\"") + '\\l"\n];\n';
+        vizsrc += '"' + String(element) + '" [\nshape = "box"\nlabel = "program:\\l' + node.code.replace(/\n/g, "\\l") + '\\l\\lenv: ' + JSON.stringify(node.env, null, 4).replace(/\"/g, "\\\"").replace(/\n/g, "\\l") + '\\l\\lostore: ' + JSON.stringify(node.ostore, null, 4).replace(/\"/g, "\\\"").replace(/\n/g, "\\l") + '\\l\"\n];\n';
     });
     
     _.each(analysis.neighborsMap, function(l, source) {
@@ -192,4 +266,6 @@ function main(data) {
     vizsrc += '}';
     console.log(vizsrc);
     document.getElementById('canvas').innerHTML = Viz(vizsrc, "svg");
+
+    return analysis;
 }
